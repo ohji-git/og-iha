@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sigfox IHA 環境センサ Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <style>
+    body { font-family: sans-serif; margin: 1em; }
+    #latest-values p { font-size: 1.1em; margin: 0.5em 0; }
+    .blue { color: blue; }
+    .yellow { color: goldenrod; }
+    .red { color: red; }
+    .black { color: black; }
+    .blink { animation: blink-animation 1s steps(2, start) infinite; }
+    @keyframes blink-animation { to { visibility: hidden; } }
+    .alert { animation: shake 0.5s infinite; }
+    @keyframes shake {
+      0% { transform: translateX(0); }
+      25% { transform: translateX(-3px); }
+      50% { transform: translateX(3px); }
+      75% { transform: translateX(-3px); }
+      100% { transform: translateX(0); }
+    }
+
+    .chart-grid { display: flex; flex-wrap: wrap; gap: 20px; }
+    .chart-box { flex: 1 1 calc(50% - 20px); min-width: 300px; }
+    canvas { width: 100% !important; height: 250px !important; }
+
+    #no-data { color: gray; margin-top: 0.5em; display: none; }
+  </style>
+</head>
+<body>
+  <h1>Sigfox IHA 環境センサ Viewer</h1>
+
+  <div id="latest-values">
+    <p><strong>現在値取得時刻:</strong> <span id="val-time">--</span></p>
+    <p id="line-temp"><strong>温度:</strong> <span id="val-temp">--</span> °C</p>
+    <p id="line-humi"><strong>湿度:</strong> <span id="val-humi">--</span> %</p>
+    <p id="line-illu"><strong>照度:</strong> <span id="val-illu">--</span> lx</p>
+    <p id="line-press"><strong>大気圧:</strong> <span id="val-press">--</span> hPa</p>
+    <p id="line-co2"><strong>CO₂:</strong> <span id="val-co2">--</span> ppm</p>
+    <p id="line-motion"><strong>人感:</strong> <span id="val-motion">--</span></p>
+    <p id="no-data">この日のデータはありません。</p>
+  </div>
+
+  <label for="date-picker">📅 日付を選択：</label>
+  <input type="date" id="date-picker" />
+
+  <p id="display-date">グラフの表示中の期間: --</p>
+
+  <div class="chart-grid">
+    <div class="chart-box"><canvas id="chart-temp"></canvas></div>
+    <div class="chart-box"><canvas id="chart-humi"></canvas></div>
+    <div class="chart-box"><canvas id="chart-illu"></canvas></div>
+    <div class="chart-box"><canvas id="chart-press"></canvas></div>
+    <div class="chart-box"><canvas id="chart-co2"></canvas></div>
+    <div class="chart-box"><canvas id="chart-motion"></canvas></div>
+  </div>
+
+  <script>
+    let charts = [];
+    let selectedDate = null;
+
+    async function loadDataForDate(dateStr) {
+      //const device = "219D34A";
+      const device = "219D393";
+
+      const baseDate = new Date(dateStr);
+      const start = Math.floor((baseDate.getTime() - 86400000) / 1000);
+      const end   = Math.floor((baseDate.getTime() + 86400000) / 1000);
+
+      const url =
+        "https://40cu30bx01.execute-api.ap-northeast-3.amazonaws.com/prod/data"
+        + `?device=${device}&from=${start}&to=${end}`;
+
+      let data = [];
+      try {
+        const res = await fetch(url);
+        data = await res.json();   // ← Proxy Integration の場合はこれだけでOK
+      } catch (e) {
+        console.error("API error:", e);
+        return;
+      }
+
+      data.sort((a, b) => a.ts - b.ts);
+
+      const filtered = data.filter(d => d.ts >= start && d.ts < end);
+
+      const noDataElem = document.getElementById("no-data");
+      if (filtered.length === 0) {
+        noDataElem.style.display = "block";
+        clearLatestValues();
+        destroyCharts();
+        return;
+      }
+      noDataElem.style.display = "none";
+
+      const labels = filtered.map(d => new Date(d.ts * 1000));
+      const temperature = filtered.map(d => d.temperature);
+      const humidity = filtered.map(d => d.humidity);
+      const illuminance = filtered.map(d => d.illuminance);
+      const pressure = filtered.map(d => d.pressure);
+      const co2 = filtered.map(d => d.co2);
+      const motion = filtered.map(d => d.pir === "ON" ? 1 : 0);
+
+      const latest = filtered[filtered.length - 1];
+
+      document.getElementById("val-time").textContent = new Date(latest.ts * 1000).toLocaleString();
+      document.getElementById("val-temp").textContent = latest.temperature.toFixed(2);
+      document.getElementById("val-humi").textContent = latest.humidity.toFixed(1);
+      document.getElementById("val-illu").textContent = latest.illuminance.toFixed(0);
+      document.getElementById("val-press").textContent = latest.pressure.toFixed(1);
+      document.getElementById("val-co2").textContent = latest.co2.toFixed(0);
+      document.getElementById("val-motion").textContent = latest.pir === "ON" ? "検知あり" : "なし";
+
+      updateStatusColors(latest);
+
+      destroyCharts();
+
+      createChart("chart-temp", "Temperature (°C)", temperature, "red", labels, { min: 0, max: 40 });
+      createChart("chart-humi", "Humidity (%)", humidity, "blue", labels, { min: 0, max: 100 });
+      createChart("chart-illu", "Illuminance (lx)", illuminance, "orange", labels, { min: 0 });
+      createChart("chart-press", "Pressure (hPa)", pressure, "purple", labels, { min: 900, max: 1100 });
+      createChart("chart-co2", "CO₂ (ppm)", co2, "green", labels, { min: 300, max: 3000 });
+      createChart("chart-motion", "人感センサ", motion, "magenta", labels, { min: 0, max: 1 });
+    }
+
+    function clearLatestValues() {
+      document.getElementById("val-time").textContent = "--";
+      document.getElementById("val-temp").textContent = "--";
+      document.getElementById("val-humi").textContent = "--";
+      document.getElementById("val-illu").textContent = "--";
+      document.getElementById("val-press").textContent = "--";
+      document.getElementById("val-co2").textContent = "--";
+      document.getElementById("val-motion").textContent = "--";
+    }
+
+    function destroyCharts() {
+      charts.forEach(c => c.destroy());
+      charts = [];
+    }
+
+    function updateStatusColors(latest) {
+      const co2Line = document.getElementById("line-co2");
+      co2Line.className = "";
+      if (latest.co2 <= 800) co2Line.classList.add("blue");
+      else if (latest.co2 <= 1200) co2Line.classList.add("yellow");
+      else if (latest.co2 <= 2000) co2Line.classList.add("red");
+      else co2Line.classList.add("red", "blink", "alert");
+
+      const tempLine = document.getElementById("line-temp");
+      tempLine.className = "";
+      if (latest.temperature >= 33) tempLine.classList.add("red", "blink", "alert");
+      else if (latest.temperature < 18) tempLine.classList.add("blue");
+      else if (latest.temperature <= 26) tempLine.classList.add("black");
+      else tempLine.classList.add("red");
+
+      const humiLine = document.getElementById("line-humi");
+      humiLine.className = "";
+      if (latest.humidity < 30) humiLine.classList.add("yellow", "blink", "alert");
+      else if (latest.humidity <= 60) humiLine.classList.add("black");
+      else humiLine.classList.add("red");
+    }
+
+    function createChart(id, label, data, color, labels, yScale = {}) {
+      const ctx = document.getElementById(id).getContext("2d");
+
+      const yAxis = {
+        beginAtZero: yScale.min === 0,
+        min: yScale.min,
+        max: yScale.max,
+        title: { display: true, text: label }
+      };
+
+      if (id === "chart-motion") {
+        yAxis.ticks = {
+          callback: v => (v === 1 ? "人感あり" : "人感なし"),
+          stepSize: 1,
+          min: 0,
+          max: 1
+        };
+      }
+
+      const chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: label,
+            data: data,
+            borderColor: color,
+            fill: false
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              type: 'time',
+              time: { unit: 'hour', tooltipFormat: 'MMM d, HH:mm' },
+              title: { display: true, text: 'Time' }
+            },
+            y: yAxis
+          }
+        }
+      });
+
+      charts.push(chart);
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const today = new Date();
+      const dateStr = today.toISOString().split("T")[0];
+      document.getElementById("date-picker").value = dateStr;
+      selectedDate = dateStr;
+      loadDataForDate(dateStr);
+
+      setInterval(() => {
+        const todayStr = new Date().toISOString().split("T")[0];
+        if (selectedDate === todayStr) {
+          loadDataForDate(selectedDate);
+        }
+//      }, 60000);  // 1分（60,000ms）
+      }, 900000);   // 15分（900,000ms）
+    });
+
+    document.getElementById("date-picker").addEventListener("change", e => {
+      selectedDate = e.target.value;
+      loadDataForDate(selectedDate);
+    });
+  </script>
+</body>
+</html>
