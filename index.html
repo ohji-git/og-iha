@@ -122,8 +122,10 @@
       createChart("chart-temp", "Temperature (°C)", temperature, "red", labels, { min: 0, max: 40 });
       createChart("chart-humi", "Humidity (%)", humidity, "blue", labels, { min: 0, max: 100 });
       createChart("chart-illu", "Illuminance (lx)", illuminance, "orange", labels, { min: 0 });
-      createChart("chart-press", "Pressure (hPa)", pressure, "purple", labels, { min: 900, max: 1100 });
-      createChart("chart-co2", "CO₂ (ppm)", co2, "green", labels, { min: 300, max: 3000 });
+      //createChart("chart-press", "Pressure (hPa)", pressure, "purple", labels, { min: 900, max: 1100 });
+      createChart("chart-press", "Pressure (hPa)", pressure, "purple", labels );
+      //createChart("chart-co2", "CO₂ (ppm)", co2, "green", labels, { min: 300, max: 3000 });
+      createChart("chart-co2", "CO₂ (ppm)", co2, "green", labels, { min: 300 });
       createChart("chart-motion", "人感センサ", motion, "magenta", labels, { min: 0, max: 1 });
     }
 
