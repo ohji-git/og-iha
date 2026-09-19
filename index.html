@@ -4,25 +4,29 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sigfox IHA 環境センサ Viewer</title>
+
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
   <style>
     body { font-family: sans-serif; margin: 1em; }
-    #latest-values p { font-size: 1.1em; margin: 0.5em 0; }
-    .blue { color: blue; }
-    .yellow { color: goldenrod; }
-    .red { color: red; }
-    .black { color: black; }
-    .blink { animation: blink-animation 1s steps(2, start) infinite; }
-    @keyframes blink-animation { to { visibility: hidden; } }
-    .alert { animation: shake 0.5s infinite; }
-    @keyframes shake {
-      0% { transform: translateX(0); }
-      25% { transform: translateX(-3px); }
-      50% { transform: translateX(3px); }
-      75% { transform: translateX(-3px); }
-      100% { transform: translateX(0); }
+
+    .tabs { margin-bottom: 1em; }
+    .tab-btn {
+      padding: 10px 20px;
+      margin-right: 5px;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #eee;
+      border-radius: 5px;
     }
+    .tab-btn.active {
+      background: #4287f5;
+      color: white;
+    }
+    .tab-content { display: none; }
+
+    #latest-values p { font-size: 1.1em; margin: 0.5em 0; }
 
     .chart-grid { display: flex; flex-wrap: wrap; gap: 20px; }
     .chart-box { flex: 1 1 calc(50% - 20px); min-width: 300px; }
@@ -31,24 +35,43 @@
     #no-data { color: gray; margin-top: 0.5em; display: none; }
   </style>
 </head>
+
 <body>
-  <h1>Sigfox IHA 環境センサ Viewer</h1>
+
+<h1>Sigfox IHA 環境センサ Viewer</h1>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="tab1">個別デバイス</button>
+  <button class="tab-btn" data-tab="tab2">個別デバイス（重ね合わせ）</button>
+  <button class="tab-btn" data-tab="tab3">複数デバイス比較</button>
+</div>
+
+<!-- ========================= -->
+<!-- タブ1 -->
+<!-- ========================= -->
+<div id="tab1" class="tab-content" style="display:block;">
+
+  <label for="device-picker">📡 デバイス：</label>
+  <select id="device-picker">
+    <option value="219D393">父宅</option>
+    <option value="219D3F6">自宅</option>
+    <option value="219D3E5">会社</option>
+  </select>
+
+  <label for="date-picker">📅 日付：</label>
+  <input type="date" id="date-picker" />
 
   <div id="latest-values">
     <p><strong>現在値取得時刻:</strong> <span id="val-time">--</span></p>
-    <p id="line-temp"><strong>温度:</strong> <span id="val-temp">--</span> °C</p>
-    <p id="line-humi"><strong>湿度:</strong> <span id="val-humi">--</span> %</p>
-    <p id="line-illu"><strong>照度:</strong> <span id="val-illu">--</span> lx</p>
-    <p id="line-press"><strong>大気圧:</strong> <span id="val-press">--</span> hPa</p>
-    <p id="line-co2"><strong>CO₂:</strong> <span id="val-co2">--</span> ppm</p>
-    <p id="line-motion"><strong>人感:</strong> <span id="val-motion">--</span></p>
+    <p><strong>設置場所:</strong> <span id="val-location">--</span></p>
+    <p><strong>温度:</strong> <span id="val-temp">--</span> °C</p>
+    <p><strong>湿度:</strong> <span id="val-humi">--</span> %</p>
+    <p><strong>照度:</strong> <span id="val-illu">--</span> lx</p>
+    <p><strong>大気圧:</strong> <span id="val-press">--</span> hPa</p>
+    <p><strong>CO₂:</strong> <span id="val-co2">--</span> ppm</p>
+    <p><strong>人感:</strong> <span id="val-motion">--</span></p>
     <p id="no-data">この日のデータはありません。</p>
   </div>
-
-  <label for="date-picker">📅 日付を選択：</label>
-  <input type="date" id="date-picker" />
-
-  <p id="display-date">グラフの表示中の期間: --</p>
 
   <div class="chart-grid">
     <div class="chart-box"><canvas id="chart-temp"></canvas></div>
@@ -58,181 +81,508 @@
     <div class="chart-box"><canvas id="chart-co2"></canvas></div>
     <div class="chart-box"><canvas id="chart-motion"></canvas></div>
   </div>
+</div>
 
-  <script>
-    let charts = [];
-    let selectedDate = null;
+<!-- ========================= -->
+<!-- タブ2 -->
+<!-- ========================= -->
+<div id="tab2" class="tab-content">
 
-    async function loadDataForDate(dateStr) {
-      //const device = "219D34A";
-      const device = "219D393";
+  <h2>個別デバイスの項目重ね合わせ</h2>
 
-      const baseDate = new Date(dateStr);
-      const start = Math.floor((baseDate.getTime() - 86400000) / 1000);
-      const end   = Math.floor((baseDate.getTime() + 86400000) / 1000);
+  <label for="device-picker2">📡 デバイス：</label>
+  <select id="device-picker2">
+    <option value="219D393">父宅</option>
+    <option value="219D3F6">自宅</option>
+    <option value="219D3E5">会社</option>
+  </select>
 
-      const url =
-        "https://40cu30bx01.execute-api.ap-northeast-3.amazonaws.com/prod/data"
-        + `?device=${device}&from=${start}&to=${end}`;
+  <label for="date-picker2">📅 日付：</label>
+  <input type="date" id="date-picker2">
 
-      let data = [];
-      try {
-        const res = await fetch(url);
-        data = await res.json();   // ← Proxy Integration の場合はこれだけでOK
-      } catch (e) {
-        console.error("API error:", e);
-        return;
+  <p>表示する項目：</p>
+  <label><input type="checkbox" value="temperature" checked> 温度</label>
+  <label><input type="checkbox" value="humidity"> 湿度</label>
+  <label><input type="checkbox" value="co2"> CO₂</label>
+  <label><input type="checkbox" value="illuminance"> 照度</label>
+  <label><input type="checkbox" value="pressure"> 大気圧</label>
+  <label><input type="checkbox" value="pir"> 人感</label>
+
+  <canvas id="chart-multi-single"></canvas>
+</div>
+
+<!-- ========================= -->
+<!-- タブ3 -->
+<!-- ========================= -->
+<div id="tab3" class="tab-content">
+
+  <h2>複数デバイス比較</h2>
+
+  <p>比較するデバイス：</p>
+  <label><input type="checkbox" class="dev3" value="219D393" checked> 父宅</label>
+  <label><input type="checkbox" class="dev3" value="219D3F6" checked> 自宅</label>
+  <label><input type="checkbox" class="dev3" value="219D3E5" checked> 会社</label>
+
+  <label for="date-picker3">📅 日付：</label>
+  <input type="date" id="date-picker3">
+
+  <p>比較する項目：</p>
+  <label><input type="checkbox" value="temperature" checked> 温度</label>
+  <label><input type="checkbox" value="humidity"> 湿度</label>
+  <label><input type="checkbox" value="co2"> CO₂</label>
+  <label><input type="checkbox" value="illuminance"> 照度</label>
+  <label><input type="checkbox" value="pressure"> 大気圧</label>
+  <label><input type="checkbox" value="pir"> 人感</label>
+
+  <canvas id="chart-multi-devices"></canvas>
+</div>
+
+<script>
+/* ============================
+   デバイス → 設置場所
+============================ */
+const deviceLocations = {
+  "219D393": "父宅",
+  "219D3F6": "自宅",
+  "219D3E5": "会社"
+};
+
+/* ============================
+   色割り当て
+============================ */
+function getColor(key) {
+  const colors = {
+    temperature: "red",
+    humidity: "blue",
+    co2: "green",
+    illuminance: "orange",
+    pressure: "purple",
+    "219D393": "red",
+    "219D3F6": "blue",
+    "219D3E5": "green"
+  };
+  return colors[key] || "black";
+}
+
+/* ============================
+   タブ切り替え
+============================ */
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    const target = btn.dataset.tab;
+    document.querySelectorAll(".tab-content").forEach(c => c.style.display = "none");
+    document.getElementById(target).style.display = "block";
+
+    if (target === "tab1") {
+      loadDataForDate(document.getElementById("date-picker").value);
+    }
+    if (target === "tab2") {
+      const d = document.getElementById("date-picker2").value;
+      const dev = document.getElementById("device-picker2").value;
+      const items = [...document.querySelectorAll('#tab2 input[type="checkbox"]:checked')].map(i => i.value);
+      loadMultiSingle(dev, d, items);
+    }
+    if (target === "tab3") {
+      loadMultiDevices(document.getElementById("date-picker3").value);
+    }
+  });
+});
+
+/* ============================
+   API データ取得
+============================ */
+async function fetchDeviceData(device, dateStr) {
+  const baseDate = new Date(dateStr);
+  const start = Math.floor((baseDate.getTime() - 86400000) / 1000);
+  const end   = Math.floor((baseDate.getTime() + 86400000) / 1000);
+
+  const url =
+    "https://40cu30bx01.execute-api.ap-northeast-3.amazonaws.com/prod/data"
+    + `?device=${device}&from=${start}&to=${end}`;
+
+  let data = [];
+  try {
+    const res = await fetch(url);
+    data = await res.json();
+  } catch (e) {
+    console.error("API error:", e);
+    return [];
+  }
+
+  data.sort((a, b) => a.ts - b.ts);
+  return data.filter(d => d.ts >= start && d.ts < end);
+}
+
+/* ============================
+   タブ1：個別デバイス表示
+============================ */
+let charts = [];
+
+function destroyCharts() {
+  charts.forEach(c => c.destroy());
+  charts = [];
+}
+
+async function loadDataForDate(dateStr) {
+  const device = document.getElementById("device-picker").value;
+  const filtered = await fetchDeviceData(device, dateStr);
+
+  const noDataElem = document.getElementById("no-data");
+  if (filtered.length === 0) {
+    noDataElem.style.display = "block";
+    destroyCharts();
+    return;
+  }
+  noDataElem.style.display = "none";
+
+  const labels = filtered.map(d => new Date(d.ts * 1000));
+  const latest = filtered[filtered.length - 1];
+
+  document.getElementById("val-time").textContent = new Date(latest.ts * 1000).toLocaleString();
+  document.getElementById("val-location").textContent = deviceLocations[device];
+  document.getElementById("val-temp").textContent = latest.temperature.toFixed(2);
+  document.getElementById("val-humi").textContent = latest.humidity.toFixed(1);
+  document.getElementById("val-illu").textContent = latest.illuminance.toFixed(0);
+  document.getElementById("val-press").textContent = latest.pressure.toFixed(1);
+  document.getElementById("val-co2").textContent = latest.co2.toFixed(0);
+  document.getElementById("val-motion").textContent = latest.pir === "ON" ? "検知あり" : "なし";
+
+  destroyCharts();
+
+  function createChart(id, label, data, color, labels, yScale = {}) {
+    const ctx = document.getElementById(id).getContext("2d");
+
+    const yAxis = {
+      suggestedMin: yScale.min,
+      suggestedMax: yScale.max,
+      title: { display: true, text: label }
+    };
+
+    const chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: label,
+          data: data,
+          borderColor: color,
+          fill: false
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'hour' }
+          },
+          y: yAxis
+        }
       }
+    });
 
-      data.sort((a, b) => a.ts - b.ts);
+    charts.push(chart);
+  }
 
-      const filtered = data.filter(d => d.ts >= start && d.ts < end);
+  createChart("chart-temp", "Temperature (°C)", filtered.map(d => d.temperature), "red", labels);
+  createChart("chart-humi", "Humidity (%)", filtered.map(d => d.humidity), "blue", labels);
+  createChart("chart-illu", "Illuminance (lx)", filtered.map(d => d.illuminance), "orange", labels);
+  createChart("chart-press", "Pressure (hPa)", filtered.map(d => d.pressure), "purple", labels);
+  createChart("chart-co2", "CO₂ (ppm)", filtered.map(d => d.co2), "green", labels);
 
-      const noDataElem = document.getElementById("no-data");
-      if (filtered.length === 0) {
-        noDataElem.style.display = "block";
-        clearLatestValues();
-        destroyCharts();
-        return;
-      }
-      noDataElem.style.display = "none";
+  const pirPoints = filtered
+    .filter(d => d.pir === "ON")
+    .map(d => ({ x: new Date(d.ts * 1000), y: 0.5 }));
 
-      const labels = filtered.map(d => new Date(d.ts * 1000));
-      const temperature = filtered.map(d => d.temperature);
-      const humidity = filtered.map(d => d.humidity);
-      const illuminance = filtered.map(d => d.illuminance);
-      const pressure = filtered.map(d => d.pressure);
-      const co2 = filtered.map(d => d.co2);
-      const motion = filtered.map(d => d.pir === "ON" ? 1 : 0);
-
-      const latest = filtered[filtered.length - 1];
-
-      document.getElementById("val-time").textContent = new Date(latest.ts * 1000).toLocaleString();
-      document.getElementById("val-temp").textContent = latest.temperature.toFixed(2);
-      document.getElementById("val-humi").textContent = latest.humidity.toFixed(1);
-      document.getElementById("val-illu").textContent = latest.illuminance.toFixed(0);
-      document.getElementById("val-press").textContent = latest.pressure.toFixed(1);
-      document.getElementById("val-co2").textContent = latest.co2.toFixed(0);
-      document.getElementById("val-motion").textContent = latest.pir === "ON" ? "検知あり" : "なし";
-
-      updateStatusColors(latest);
-
-      destroyCharts();
-
-      createChart("chart-temp", "Temperature (°C)", temperature, "red", labels, { min: 0, max: 40 });
-      createChart("chart-humi", "Humidity (%)", humidity, "blue", labels, { min: 0, max: 100 });
-      createChart("chart-illu", "Illuminance (lx)", illuminance, "orange", labels, { min: 0 });
-      //createChart("chart-press", "Pressure (hPa)", pressure, "purple", labels, { min: 900, max: 1100 });
-      createChart("chart-press", "Pressure (hPa)", pressure, "purple", labels );
-      //createChart("chart-co2", "CO₂ (ppm)", co2, "green", labels, { min: 300, max: 3000 });
-      createChart("chart-co2", "CO₂ (ppm)", co2, "green", labels, { min: 300 });
-      createChart("chart-motion", "人感センサ", motion, "magenta", labels, { min: 0, max: 1 });
-    }
-
-    function clearLatestValues() {
-      document.getElementById("val-time").textContent = "--";
-      document.getElementById("val-temp").textContent = "--";
-      document.getElementById("val-humi").textContent = "--";
-      document.getElementById("val-illu").textContent = "--";
-      document.getElementById("val-press").textContent = "--";
-      document.getElementById("val-co2").textContent = "--";
-      document.getElementById("val-motion").textContent = "--";
-    }
-
-    function destroyCharts() {
-      charts.forEach(c => c.destroy());
-      charts = [];
-    }
-
-    function updateStatusColors(latest) {
-      const co2Line = document.getElementById("line-co2");
-      co2Line.className = "";
-      if (latest.co2 <= 800) co2Line.classList.add("blue");
-      else if (latest.co2 <= 1200) co2Line.classList.add("yellow");
-      else if (latest.co2 <= 2000) co2Line.classList.add("red");
-      else co2Line.classList.add("red", "blink", "alert");
-
-      const tempLine = document.getElementById("line-temp");
-      tempLine.className = "";
-      if (latest.temperature >= 33) tempLine.classList.add("red", "blink", "alert");
-      else if (latest.temperature < 18) tempLine.classList.add("blue");
-      else if (latest.temperature <= 26) tempLine.classList.add("black");
-      else tempLine.classList.add("red");
-
-      const humiLine = document.getElementById("line-humi");
-      humiLine.className = "";
-      if (latest.humidity < 30) humiLine.classList.add("yellow", "blink", "alert");
-      else if (latest.humidity <= 60) humiLine.classList.add("black");
-      else humiLine.classList.add("red");
-    }
-
-    function createChart(id, label, data, color, labels, yScale = {}) {
-      const ctx = document.getElementById(id).getContext("2d");
-
-      const yAxis = {
-        beginAtZero: yScale.min === 0,
-        min: yScale.min,
-        max: yScale.max,
-        title: { display: true, text: label }
-      };
-
-      if (id === "chart-motion") {
-        yAxis.ticks = {
-          callback: v => (v === 1 ? "人感あり" : "人感なし"),
-          stepSize: 1,
-          min: 0,
-          max: 1
-        };
-      }
-
-      const chart = new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: labels,
-          datasets: [{
-            label: label,
-            data: data,
-            borderColor: color,
-            fill: false
-          }]
+  const ctxMotion = document.getElementById("chart-motion").getContext("2d");
+  const chartMotion = new Chart(ctxMotion, {
+    type: "scatter",
+    data: {
+      datasets: [{
+        label: "人感あり",
+        data: pirPoints,
+        borderColor: "magenta",
+        backgroundColor: "magenta",
+        pointRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "hour" }
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: {
-              type: 'time',
-              time: { unit: 'hour', tooltipFormat: 'MMM d, HH:mm' },
-              title: { display: true, text: 'Time' }
-            },
-            y: yAxis
-          }
+        y: {
+	      display: false,
+    	  min: 0,          // ★ Y軸中央にするための設定
+          max: 1
         }
-      });
+      }
+    }
+  });
+  charts.push(chartMotion);
+}
+/* ============================
+   タブ2：multi-axis + pir
+============================ */
+let chartMultiSingle = null;
 
-      charts.push(chart);
+async function loadMultiSingle(device, dateStr, items) {
+  const data = await fetchDeviceData(device, dateStr);
+  if (chartMultiSingle) chartMultiSingle.destroy();
+
+  const labels = data.map(d => new Date(d.ts * 1000));
+
+  const datasets = items.map((key, index) => {
+
+    /* ============================
+       ★ 人感（pir）は scatter 表示
+    ============================ */
+    if (key === "pir") {
+      const pirPoints = data
+        .filter(d => d.pir === "ON")
+        .map(d => ({ x: new Date(d.ts * 1000), y: 0.5 }));
+
+      return {
+        label: "人感",
+        data: pirPoints,
+        borderColor: "magenta",
+        backgroundColor: "magenta",
+        pointRadius: 4,
+        type: "scatter",
+        yAxisID: `y${index}`
+      };
     }
 
-    window.addEventListener("DOMContentLoaded", () => {
-      const today = new Date();
-      const dateStr = today.toISOString().split("T")[0];
-      document.getElementById("date-picker").value = dateStr;
-      selectedDate = dateStr;
-      loadDataForDate(dateStr);
+    /* ============================
+       ★ 通常項目（温度・湿度など）
+    ============================ */
+    return {
+      label: key,
+      data: data.map(d => d[key]),
+      borderColor: getColor(key),
+      fill: false,
+      yAxisID: `y${index}`
+    };
+  });
 
-      setInterval(() => {
-        const todayStr = new Date().toISOString().split("T")[0];
-        if (selectedDate === todayStr) {
-          loadDataForDate(selectedDate);
-        }
-//      }, 60000);  // 1分（60,000ms）
-      }, 900000);   // 15分（900,000ms）
-    });
+  /* ============================
+     ★ 項目ごとに Y 軸を作成
+  ============================ */
+  const yAxes = {};
+  items.forEach((key, index) => {
+	yAxes[`y${index}`] = {
+  	  type: "linear",
+  	  position: index % 2 === 0 ? "left" : "right",
+  	  title: { display: true, text: key === "pir" ? "人感" : key },
 
-    document.getElementById("date-picker").addEventListener("change", e => {
-      selectedDate = e.target.value;
-      loadDataForDate(selectedDate);
+	  // ★ pir のときだけ 0〜1
+  	  min: key === "pir" ? 0 : undefined,
+  	  max: key === "pir" ? 1 : undefined
+	};
+  });
+
+  /* ============================
+     ★ グラフ描画
+  ============================ */
+  chartMultiSingle = new Chart(document.getElementById("chart-multi-single"), {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "hour" }
+        },
+        ...yAxes
+      }
+    }
+  });
+}
+/* ============================
+   タブ3：multi-axis + pir
+============================ */
+let chartMultiDevices = null;
+
+async function loadMultiDevices(dateStr) {
+
+  /* ============================
+     ★ タブ3のデバイス選択チェックボックスから取得
+  ============================ */
+  const devices = [...document.querySelectorAll('.dev3:checked')]
+                    .map(cb => cb.value);
+
+  if (devices.length === 0) {
+    if (chartMultiDevices) chartMultiDevices.destroy();
+    return;
+  }
+
+  const items = [...document.querySelectorAll('#tab3 input[type="checkbox"]:checked')]
+                  .map(i => i.value);
+
+  if (chartMultiDevices) chartMultiDevices.destroy();
+
+  const labels = [];
+  const datasets = [];
+
+  for (const dev of devices) {
+    const data = await fetchDeviceData(dev, dateStr);
+
+    if (labels.length === 0) {
+      labels.push(...data.map(d => new Date(d.ts * 1000)));
+    }
+
+    items.forEach((item, index) => {
+
+      /* ============================
+         ★ 人感（pir）は scatter
+      ============================ */
+      if (item === "pir") {
+        const pirPoints = data
+          .filter(d => d.pir === "ON")
+          .map(d => ({ x: new Date(d.ts * 1000), y: 0.5 }));
+
+        datasets.push({
+          label: `${deviceLocations[dev]} - 人感`,
+          data: pirPoints,
+          borderColor: getColor(dev),
+          backgroundColor: getColor(dev),
+          pointRadius: 4,
+          type: "scatter",
+          yAxisID: `y${index}`
+        });
+        return;
+      }
+
+      /* ============================
+         ★ 通常項目
+      ============================ */
+      datasets.push({
+        label: `${deviceLocations[dev]} - ${item}`,
+        data: data.map(d => d[item]),
+        borderColor: getColor(dev),
+        borderWidth: 2,
+        fill: false,
+        yAxisID: `y${index}`
+      });
     });
-  </script>
+  }
+
+  /* ============================
+     ★ 項目ごとに Y 軸を作成
+  ============================ */
+  const yAxes = {};
+  items.forEach((item, index) => {
+	yAxes[`y${index}`] = {
+  	  type: "linear",
+  	  position: index % 2 === 0 ? "left" : "right",
+  	  title: { display: true, text: item === "pir" ? "人感" : item },
+
+	  // ★ pir のときだけ中央表示
+  	  min: item === "pir" ? 0 : undefined,
+  	  max: item === "pir" ? 1 : undefined
+	};
+  });
+
+  /* ============================
+     ★ グラフ描画
+  ============================ */
+  chartMultiDevices = new Chart(document.getElementById("chart-multi-devices"), {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: "hour" }
+        },
+        ...yAxes
+      }
+    }
+  });
+}
+
+/* ============================
+   イベント登録
+============================ */
+
+/* タブ1 */
+document.getElementById("device-picker").addEventListener("change", () => {
+  const d = document.getElementById("date-picker").value;
+  loadDataForDate(d);
+});
+
+document.getElementById("date-picker").addEventListener("change", e => {
+  loadDataForDate(e.target.value);
+});
+
+/* タブ2 */
+document.getElementById("device-picker2").addEventListener("change", () => {
+  const d = document.getElementById("date-picker2").value;
+  const dev = document.getElementById("device-picker2").value;
+  const items = [...document.querySelectorAll('#tab2 input[type="checkbox"]:checked')].map(i => i.value);
+  loadMultiSingle(dev, d, items);
+});
+
+document.getElementById("date-picker2").addEventListener("change", e => {
+  const d = e.target.value;
+  const dev = document.getElementById("device-picker2").value;
+  const items = [...document.querySelectorAll('#tab2 input[type="checkbox"]:checked')].map(i => i.value);
+  loadMultiSingle(dev, d, items);
+});
+
+document.querySelectorAll('#tab2 input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener("change", () => {
+    const d = document.getElementById("date-picker2").value;
+    const dev = document.getElementById("device-picker2").value;
+    const items = [...document.querySelectorAll('#tab2 input[type="checkbox"]:checked')].map(i => i.value);
+    loadMultiSingle(dev, d, items);
+  });
+});
+
+/* タブ3：デバイス選択 */
+document.querySelectorAll('.dev3').forEach(cb => {
+  cb.addEventListener("change", () => {
+    const d = document.getElementById("date-picker3").value;
+    loadMultiDevices(d);
+  });
+});
+
+/* タブ3：項目選択 */
+document.getElementById("date-picker3").addEventListener("change", e => {
+  loadMultiDevices(e.target.value);
+});
+
+document.querySelectorAll('#tab3 input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener("change", () => {
+    const d = document.getElementById("date-picker3").value;
+    loadMultiDevices(d);
+  });
+});
+
+/* ============================
+   初期化処理
+============================ */
+window.addEventListener("DOMContentLoaded", () => {
+  const today = new Date().toISOString().split("T")[0];
+
+  document.getElementById("date-picker").value = today;
+  loadDataForDate(today);
+
+  document.getElementById("date-picker2").value = today;
+  loadMultiSingle("219D393", today, ["temperature"]);
+
+  document.getElementById("date-picker3").value = today;
+  loadMultiDevices(today);
+});
+</script>
 </body>
 </html>
