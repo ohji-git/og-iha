@@ -61,6 +61,19 @@
   <label for="date-picker">📅 日付：</label>
   <input type="date" id="date-picker" />
 
+  <hr>
+  <h3>CSVデータ ダウンロード</h3>
+  <label for="csv-start-date">開始日：</label>
+  <input type="date" id="csv-start-date" />
+
+  <label for="csv-end-date" style="margin-left:15px;">終了日：</label>
+  <input type="date" id="csv-end-date" />
+
+  <button id="csv-download-btn" style="margin-left:15px; padding:8px 16px; cursor:pointer;">
+    CSVダウンロード
+  </button>
+  <p id="csv-status" style="color:gray;"></p>
+
   <div id="latest-values">
     <p><strong>現在値取得時刻:</strong> <span id="val-time">--</span></p>
     <p><strong>設置場所:</strong> <span id="val-location">--</span></p>
@@ -216,6 +229,141 @@ async function fetchDeviceData(device, dateStr) {
   data.sort((a, b) => a.ts - b.ts);
   return data.filter(d => d.ts >= start && d.ts < end);
 }
+
+/* ============================
+   期間データ取得・CSVダウンロード
+============================ */
+
+async function fetchDeviceDataForPeriod(device, startDateStr, endDateStr) {
+  const startDate = new Date(startDateStr + "T00:00:00");
+  const endDate = new Date(endDateStr + "T00:00:00");
+
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    throw new Error("開始日または終了日が正しくありません。");
+  }
+
+  if (startDate > endDate) {
+    throw new Error("開始日は終了日以前にしてください。");
+  }
+
+  // 終了日の翌日0時をAPIの終了時刻とする
+  const start = Math.floor(startDate.getTime() / 1000);
+  const end = Math.floor((endDate.getTime() + 86400000) / 1000);
+
+  const url =
+    "https://40cu30bx01.execute-api.ap-northeast-3.amazonaws.com/prod/data"
+    + `?device=${encodeURIComponent(device)}&from=${start}&to=${end}`;
+
+  const res = await fetch(url);
+
+  if (!res.ok) {
+    throw new Error(`APIエラー: HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+
+  return data
+    .filter(d => d.ts >= start && d.ts < end)
+    .sort((a, b) => a.ts - b.ts);
+}
+
+function csvEscape(value) {
+  if (value === null || value === undefined) return "";
+
+  const str = String(value);
+
+  if (/[",\r\n]/.test(str)) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+
+  return str;
+}
+
+function downloadCsv(data, device, startDateStr, endDateStr) {
+  const headers = [
+    "timestamp",
+    "日時",
+    "device",
+    "設置場所",
+    "temperature",
+    "humidity",
+    "illuminance",
+    "pressure",
+    "co2",
+    "pir"
+  ];
+
+  const rows = data.map(d => [
+    d.ts,
+    new Date(d.ts * 1000).toLocaleString("ja-JP"),
+    device,
+    deviceLocations[device] || "",
+    d.temperature,
+    d.humidity,
+    d.illuminance,
+    d.pressure,
+    d.co2,
+    d.pir
+  ]);
+
+  const csv = [headers, ...rows]
+    .map(row => row.map(csvEscape).join(","))
+    .join("\r\n");
+
+  // UTF-8 BOMを付けることでExcelでも日本語を扱いやすくする
+  const blob = new Blob(["\uFEFF" + csv], {
+    type: "text/csv;charset=utf-8;"
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  const safeDevice = deviceLocations[device] || device;
+  a.href = url;
+  a.download = `${safeDevice}_${startDateStr}_${endDateStr}.csv`;
+
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("csv-download-btn").addEventListener("click", async () => {
+  const device = document.getElementById("device-picker").value;
+  const startDate = document.getElementById("csv-start-date").value;
+  const endDate = document.getElementById("csv-end-date").value;
+  const status = document.getElementById("csv-status");
+
+  if (!startDate || !endDate) {
+    status.textContent = "開始日と終了日を指定してください。";
+    return;
+  }
+
+  try {
+    status.textContent = "データを取得しています……";
+
+    const data = await fetchDeviceDataForPeriod(
+      device,
+      startDate,
+      endDate
+    );
+
+    if (data.length === 0) {
+      status.textContent = "指定期間のデータがありません。";
+      return;
+    }
+
+    downloadCsv(data, device, startDate, endDate);
+
+    status.textContent =
+      `${data.length}件のデータをCSVとしてダウンロードしました。`;
+
+  } catch (e) {
+    console.error("CSV download error:", e);
+    status.textContent = "CSVダウンロードに失敗しました: " + e.message;
+  }
+});
 
 /* ============================
    タブ1：個別デバイス表示
@@ -576,6 +724,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("date-picker").value = today;
   loadDataForDate(today);
+
+  document.getElementById("csv-start-date").value = today;
+  document.getElementById("csv-end-date").value = today;
 
   document.getElementById("date-picker2").value = today;
   loadMultiSingle("219D393", today, ["temperature"]);
